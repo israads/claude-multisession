@@ -24,7 +24,7 @@ npx claude-multisession
 ### Manual
 
 ```bash
-git clone https://github.com/israellaguan/claude-multisession.git
+git clone https://github.com/israads/claude-multisession.git
 cd claude-multisession
 ./install.sh
 ```
