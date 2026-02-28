@@ -1,0 +1,43 @@
+{
+  "name": "claude-multisession",
+  "version": "1.0.0",
+  "description": "Run multiple Claude Code sessions with independent accounts, isolated history, and shared config",
+  "bin": {
+    "cms": "bin/cms-launcher.sh",
+    "cms-session": "bin/cms-session.sh",
+    "cms-who": "bin/cms-who.sh",
+    "cms-info": "bin/cms-info.sh",
+    "cms-list": "bin/cms-list.sh",
+    "cms-clean": "bin/cms-clean.sh",
+    "cms-install": "install.sh"
+  },
+  "scripts": {
+    "postinstall": "echo 'Run cms-install to set up sessions and shell aliases.'"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "multi-session",
+    "multi-account",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/israellaguan/claude-multisession"
+  },
+  "author": "Israel Laguan",
+  "license": "MIT",
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "bin/",
+    "install.sh",
+    "LICENSE",
+    "README.md"
+  ]
+}
