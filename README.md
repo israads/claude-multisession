@@ -1,10 +1,99 @@
 # claude-multisession
 
-Run multiple Claude Code instances with **independent accounts**, isolated history, and shared (or independent) configuration.
+Run multiple Claude Code instances **simultaneously**, each logged into a **different account**, with isolated conversation history — all from the same machine.
 
-## Why?
+## The problem
 
-Claude Code ties authentication, history, and projects to a single `~/.claude` directory. If you have multiple accounts (personal, work, different orgs), you can't easily switch between them. This package solves that by creating isolated session directories, each with its own auth, while optionally sharing settings, MCPs, and plugins across all sessions.
+Claude Code stores everything in one directory (`~/.claude`): your login, your conversation history, your project memory. That means:
+
+- You can only be logged into **one account at a time**
+- Switching accounts means logging out and back in
+- You lose conversation context when switching
+- You can't run two sessions with different accounts in parallel
+
+If you have a personal account and a work account, or multiple clients each with their own org — you're stuck constantly logging in and out.
+
+## What this solves
+
+`claude-multisession` creates isolated session directories. Each session has its own authentication and history, but they all share your settings, MCP servers, and plugins. You log in once per session, and it stays logged in forever.
+
+## Real-world use cases
+
+### You have personal + work accounts
+
+Your company gives you a Claude Max org seat. You also pay for a personal Pro account for side projects. Without multisession, you'd log out of one to use the other.
+
+```bash
+clauded-1    # → logged in as you@company.com (Max, Company Org)
+clauded-2    # → logged in as you@gmail.com (Pro, personal)
+```
+
+Both run simultaneously. Each keeps its own conversation history.
+
+### You freelance for multiple clients
+
+Each client has their own Claude org and gave you a seat. You work on Client A in the morning and Client B in the afternoon — or both at the same time.
+
+```bash
+clauded-1    # → you@clientA.com — working on their API
+clauded-2    # → you@clientB.com — working on their frontend
+clauded-3    # → you@personal.com — your own side project
+```
+
+Conversations, project memory, and billing stay completely separate.
+
+### You want to maximize rate limits
+
+Claude Code has per-account rate limits. With multiple accounts on different plans, you can keep working when one hits its limit.
+
+```bash
+clauded-1    # → account A (hit rate limit)
+clauded-2    # → account B (still has capacity) — keep working
+```
+
+### You share a machine with a teammate
+
+Two developers, one workstation. Each has their own Claude account.
+
+```bash
+clauded-1    # → dev1@team.com
+clauded-2    # → dev2@team.com
+```
+
+Independent history, independent auth, independent billing.
+
+### You want separate contexts per project
+
+Even with one account, you might want isolated conversation history per project so Claude doesn't mix up context.
+
+```bash
+clauded-1    # → big-refactor project (long conversation history)
+clauded-2    # → quick-fixes (fresh context, no clutter)
+```
+
+## Quick example
+
+```bash
+# Install
+npm install -g claude-multisession
+cms-install    # interactive setup, takes 30 seconds
+
+# Open two terminals
+clauded-1      # Terminal 1: logs in as work@company.com
+clauded-2      # Terminal 2: logs in as me@gmail.com
+
+# Check who's logged in where
+cms-who
+# Claude Sessions - Accounts
+# =================================================================
+#   Command      Session         Plan     Account
+# -----------------------------------------------------------------
+#   cms 0        default         -        not logged in
+#   cms 1        session-1       max      work@company.com
+#   cms 2        session-2       pro      me@gmail.com
+```
+
+Each session remembers its login. Next time you run `clauded-1`, you're already authenticated — no need to log in again.
 
 ## Install
 
@@ -29,6 +118,8 @@ cd claude-multisession
 ./install.sh
 ```
 
+The installer walks you through 7 steps: checks prerequisites, asks your preferred command name, permission mode, number of sessions, config sharing preference, creates directories, and sets up shell aliases.
+
 ## Usage
 
 During installation you choose your command name (default: `clauded`). Both space and dash syntax work identically:
@@ -40,122 +131,96 @@ clauded-1      # dash syntax  → session 1 (same thing)
 
 ### All commands
 
-| Command | Action |
-|---------|--------|
-| `clauded` | Launch default session |
+| Command | What it does |
+|---------|-------------|
+| `clauded` | Launch default session (session 0) |
 | `clauded 1` or `clauded-1` | Launch session 1 |
 | `clauded 2` or `clauded-2` | Launch session 2 |
-| `clauded! 1` or `clauded-1!` | Session 1 with full permissions |
-| `cms-who` | Show all accounts |
-| `cms-info` | Show all session info |
+| `clauded! 1` or `clauded-1!` | Session 1 with full permissions (skip prompts) |
+| `cms-who` | Show which account is logged into each session |
+| `cms-info` | Show detailed info (email, plan, org, conversations) |
 | `cms-info 2` | Info for session 2 only |
-| `cms-list` | List sessions |
-| `cms-clean session-1` | Delete session 1 |
+| `cms-list` | List all sessions with status |
+| `cms-clean session-1` | Delete session 1 and all its data |
 
 ### Custom command names
 
-The installer asks what you want your command to be called. For example, if you choose `claude-session`:
+The installer asks what you want your command to be called. If you prefer `cs` instead of `clauded`:
 
 ```bash
-claude-session 1      # session 1
-claude-session-1      # session 1 (same)
-claude-session! 1     # session 1, full permissions
-claude-session-1!     # session 1, full permissions (same)
+cs 1       # session 1
+cs-1       # session 1 (same)
+cs! 1      # session 1, full permissions
+cs-1!      # session 1, full permissions (same)
 ```
 
-### Permission convention
+### Permission modes
 
-- **`clauded-N`** — Default permissions (Claude asks before risky operations)
-- **`clauded-N!`** — Full permissions (`--dangerously-skip-permissions`)
-
-The `!` suffix means "dangerous mode / skip all prompts".
+- **`clauded-N`** — Default permissions: Claude asks before risky operations
+- **`clauded-N!`** — Full permissions: `--dangerously-skip-permissions` (the `!` means "skip all safety prompts")
 
 ## How it works
 
-Each session gets its own directory under `~/.claude-sessions/`:
-
 ```
-~/.claude-sessions/
-├── default/          # clauded / clauded-0
-│   ├── auth/         # Independent authentication (chmod 700)
-│   ├── history.jsonl # Independent conversation history
-│   ├── projects/     # Independent project memory
-│   ├── settings.json # Symlink to ~/.claude/settings.json (if shared mode)
-│   └── ...
-├── session-1/        # clauded 1 / clauded-1
-│   ├── auth/
-│   ├── history.jsonl
-│   └── ...
-└── session-2/        # clauded 2 / clauded-2
-    └── ...
-```
+~/.claude/                  ← your global config (shared)
+  ├── settings.json
+  ├── plugins/
+  └── ...
 
-### What's isolated per session
-- Authentication (login with different accounts)
-- Conversation history
-- Project memory and context
-- Cache and file history
-
-### What's shared (configurable per session)
-- `settings.json` (permissions, preferences)
-- MCP servers configuration
-- Plugins and extensions
-- IDE configuration
-
-### First-launch prompt
-
-When you launch a new session for the first time, you'll be asked:
-
-```
-Configuration mode for 'session-1':
-  Found global config: settings.json plugins ide
-
-  1) Shared  — Symlink settings/MCPs/plugins from ~/.claude (recommended)
-  2) Independent — Copy config into this session
-
-  Choose [1/2] (default: 1):
+~/.claude-sessions/         ← created by multisession
+  ├── default/              ← clauded / clauded-0
+  │   ├── auth/             ← independent login (chmod 700)
+  │   ├── history.jsonl     ← independent conversations
+  │   ├── projects/         ← independent project memory
+  │   ├── settings.json     ← symlink → ~/.claude/settings.json
+  │   └── plugins           ← symlink → ~/.claude/plugins
+  ├── session-1/            ← clauded-1
+  │   ├── auth/             ← different account
+  │   ├── history.jsonl     ← different conversations
+  │   └── ...
+  └── session-2/            ← clauded-2
+      └── ...
 ```
 
-This is stored per-session, so session-1 can be shared while session-2 is independent.
+**Isolated per session:** authentication, conversation history, project memory, cache.
 
-You can also set a global default during installation to skip this prompt.
+**Shared across sessions (configurable):** settings.json, MCP servers, plugins, IDE config. On first launch of each session, you choose whether to share (symlink) or copy (independent).
 
 ## Configuration
 
-Global config lives in `~/.claude-multisession/config`:
+Global config: `~/.claude-multisession/config`
 
 ```bash
 PERMISSIONS_MODE="default"   # "default" or "full"
-SESSION_COUNT="5"
+SESSION_COUNT="5"            # number of sessions
 SHARING_MODE="shared"        # "shared", "independent", or "ask"
 CMD_NAME="clauded"           # your chosen command name
 ```
 
-- **`PERMISSIONS_MODE=default`** — Claude asks before risky operations
-- **`PERMISSIONS_MODE=full`** — Adds `--dangerously-skip-permissions` flag
-- **`SHARING_MODE=shared`** — Symlinks settings/MCPs from `~/.claude`
-- **`SHARING_MODE=independent`** — Each session gets its own copy
-- **`SHARING_MODE=ask`** — Prompt on first launch of each session
-- **`CMD_NAME`** — The command name you chose during install
+| Setting | Options | What it controls |
+|---------|---------|-----------------|
+| `PERMISSIONS_MODE` | `default` / `full` | Whether Claude asks before risky operations |
+| `SHARING_MODE` | `shared` / `independent` / `ask` | Whether sessions share settings from `~/.claude` or get their own copy |
+| `CMD_NAME` | any name | The command you type to launch sessions |
 
-Per-session config is stored in `~/.claude-sessions/<name>/.cms-session-config`.
+Per-session overrides are stored in `~/.claude-sessions/<name>/.cms-session-config`.
 
 ## Platform support
 
-| Platform | Support |
-|----------|---------|
-| macOS | Full |
-| Linux | Full |
-| Windows (WSL) | Full (run inside WSL) |
-| Windows (Git Bash) | Partial (some features may not work) |
+| Platform | Status |
+|----------|--------|
+| macOS | Full support |
+| Linux | Full support |
+| Windows (WSL) | Full support (run inside WSL) |
+| Windows (Git Bash) | Partial |
 | Windows (native) | Not supported |
 
 ## Security
 
-- Session names are sanitized (alphanumeric, dash, underscore only) to prevent path traversal
-- Auth directories have restrictive permissions (700)
-- No hardcoded permission flags — everything is configurable
-- All variable expansions are properly quoted
+- Session names are sanitized (`[a-zA-Z0-9_-]` only) to prevent path traversal
+- Auth directories have restrictive permissions (`chmod 700`)
+- No hardcoded permission flags — everything is user-configurable
+- All variable expansions are properly quoted to prevent injection
 
 ## Uninstall
 
@@ -163,7 +228,7 @@ Per-session config is stored in `~/.claude-sessions/<name>/.cms-session-config`.
 npm uninstall -g claude-multisession
 ```
 
-Then optionally remove data:
+Optionally remove data:
 
 ```bash
 rm -rf ~/.claude-sessions
