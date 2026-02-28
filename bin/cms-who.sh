@@ -17,6 +17,19 @@ else
     BLUE='' GREEN='' RED='' YELLOW='' DIM='' BOLD='' NC=''
 fi
 
+# --- Parse a JSON string value; returns empty for null ---
+json_str() {
+    local key="$1" json="$2"
+    local val
+    val=$(echo "${json}" | grep "\"${key}\"" | head -1)
+    # Check for null
+    if echo "${val}" | grep -q ": *null"; then
+        echo ""
+        return
+    fi
+    echo "${val}" | sed 's/.*"'"${key}"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
 echo -e "${BLUE}${BOLD}Claude Sessions - Accounts${NC}"
 echo "================================================================="
 printf "  ${DIM}%-12s %-15s %-8s %s${NC}\n" "Command" "Session" "Plan" "Account"
@@ -27,12 +40,11 @@ if [[ ! -d "${CLAUDE_HOME_BASE}" ]]; then
     exit 0
 fi
 
-# --- Cross-platform email extraction ---
+# --- Cross-platform email extraction from .claude.json ---
 get_email_from_json() {
     local session_dir="$1"
     local claude_json="${session_dir}/auth/.claude.json"
     if [[ -f "${claude_json}" ]]; then
-        # Try to extract oauthAccount.emailAddress
         local email
         email=$(grep -o '"emailAddress"[[:space:]]*:[[:space:]]*"[^"]*"' "${claude_json}" 2>/dev/null | head -1 | sed 's/.*"emailAddress"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
         if [[ -n "${email}" ]]; then
@@ -59,17 +71,16 @@ for session_dir in "${CLAUDE_HOME_BASE}"/*/; do
     email=$(get_email_from_json "${session_dir}") || true
 
     if [[ -n "${email}" ]]; then
-        # Got email from JSON, try to get plan info via auth status
         result=$(CLAUDE_HOME="${session_dir}" CLAUDE_CONFIG_DIR="${auth_dir}" claude auth status 2>&1) || true
-        sub=$(echo "${result}" | grep '"subscriptionType"' | sed 's/.*"subscriptionType"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
+        sub=$(json_str "subscriptionType" "${result}")
         sub="${sub:-?}"
         printf "  %-12s %-15s ${YELLOW}%-8s${NC} ${GREEN}%s${NC}\n" "${cmd}" "${session_name}" "${sub}" "${email}"
     else
         # Fallback: use claude auth status
         result=$(CLAUDE_HOME="${session_dir}" CLAUDE_CONFIG_DIR="${auth_dir}" claude auth status 2>&1) || true
         logged=$(echo "${result}" | grep '"loggedIn"' | grep -o 'true\|false') || true
-        email=$(echo "${result}" | grep '"email"' | sed 's/.*"email"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
-        sub=$(echo "${result}" | grep '"subscriptionType"' | sed 's/.*"subscriptionType"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
+        email=$(json_str "email" "${result}")
+        sub=$(json_str "subscriptionType" "${result}")
 
         if [[ "${logged}" == "true" ]] && [[ -n "${email}" ]]; then
             printf "  %-12s %-15s ${YELLOW}%-8s${NC} ${GREEN}%s${NC}\n" "${cmd}" "${session_name}" "${sub}" "${email}"

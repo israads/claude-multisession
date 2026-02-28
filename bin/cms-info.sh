@@ -28,6 +28,19 @@ file_mtime() {
     fi
 }
 
+# --- Parse a JSON string value; returns empty for null ---
+json_str() {
+    local key="$1" json="$2"
+    local val
+    val=$(echo "${json}" | grep "\"${key}\"" | head -1)
+    # Check for null
+    if echo "${val}" | grep -q ": *null"; then
+        echo ""
+        return
+    fi
+    echo "${val}" | sed 's/.*"'"${key}"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
 # --- Filter ---
 FILTER="${1:-}"
 
@@ -62,17 +75,17 @@ for session_dir in "${CLAUDE_HOME_BASE}"/*/; do
     # Get auth info
     result=$(CLAUDE_HOME="${session_dir}" CLAUDE_CONFIG_DIR="${auth_dir}" claude auth status 2>&1) || true
     logged=$(echo "${result}" | grep '"loggedIn"' | grep -o 'true\|false') || true
-    email=$(echo "${result}" | grep '"email"' | sed 's/.*"email"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
-    sub=$(echo "${result}" | grep '"subscriptionType"' | sed 's/.*"subscriptionType"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
-    org=$(echo "${result}" | grep '"orgName"' | sed 's/.*"orgName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
+    email=$(json_str "email" "${result}")
+    sub=$(json_str "subscriptionType" "${result}")
+    org=$(json_str "orgName" "${result}")
 
-    if [[ "${logged}" != "true" ]]; then
+    if [[ "${logged}" != "true" ]] || [[ -z "${email}" ]]; then
         echo -e "\n  ${BLUE}${BOLD}[${cmd}]${NC} ${RED}not logged in${NC}"
         continue
     fi
 
     echo -e "\n  ${BLUE}${BOLD}[${cmd}]${NC} ${GREEN}${email}${NC}"
-    echo -e "  Plan: ${YELLOW}${sub}${NC}  |  Org: ${org:-none}"
+    echo -e "  Plan: ${YELLOW}${sub:-unknown}${NC}  |  Org: ${org:-none}"
 
     # Show history stats
     history_file="${session_dir}history.jsonl"
