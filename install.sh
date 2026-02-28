@@ -24,7 +24,7 @@ echo "================================================================="
 echo ""
 
 # --- Step 1: Check prerequisites ---
-echo -e "${BOLD}[1/6] Checking prerequisites...${NC}"
+echo -e "${BOLD}[1/7] Checking prerequisites...${NC}"
 
 if ! command -v claude &>/dev/null; then
     echo -e "${RED}Error: 'claude' CLI not found.${NC}" >&2
@@ -47,8 +47,28 @@ case "${OS}" in
 esac
 echo ""
 
-# --- Step 2: Permission mode ---
-echo -e "${BOLD}[2/6] Permission mode${NC}"
+# --- Step 2: Command name ---
+echo -e "${BOLD}[2/7] Command name${NC}"
+echo "  What base name do you want for your commands?"
+echo ""
+echo -e "  Examples: if you choose ${BOLD}clauded${NC}, you'll get:"
+echo -e "    ${DIM}clauded      → default session${NC}"
+echo -e "    ${DIM}clauded-1    → session 1 (default permissions)${NC}"
+echo -e "    ${DIM}clauded-1!   → session 1 (full permissions)${NC}"
+echo ""
+read -r -p "  Command name (default: clauded): " CMD_NAME
+CMD_NAME="${CMD_NAME:-clauded}"
+
+# Validate: only allow alphanumeric and dash
+if [[ ! "${CMD_NAME}" =~ ^[a-zA-Z][a-zA-Z0-9-]*$ ]]; then
+    echo -e "  ${YELLOW}Invalid name. Using default: clauded${NC}"
+    CMD_NAME="clauded"
+fi
+echo -e "  ${GREEN}Command name: ${CMD_NAME}${NC}"
+echo ""
+
+# --- Step 3: Permission mode ---
+echo -e "${BOLD}[3/7] Permission mode${NC}"
 echo "  How should Claude handle permissions in sessions?"
 echo ""
 echo "  1) Default — Claude asks before risky operations (recommended)"
@@ -69,8 +89,8 @@ case "${perm_choice}" in
 esac
 echo ""
 
-# --- Step 3: Number of sessions ---
-echo -e "${BOLD}[3/6] Number of sessions${NC}"
+# --- Step 4: Number of sessions ---
+echo -e "${BOLD}[4/7] Number of sessions${NC}"
 echo "  How many sessions do you want? (1-9)"
 echo "  Each session gets independent auth, history, and projects."
 echo ""
@@ -85,8 +105,8 @@ fi
 echo -e "  ${GREEN}Will create ${session_count} session(s) + default.${NC}"
 echo ""
 
-# --- Step 4: Default sharing mode ---
-echo -e "${BOLD}[4/6] Default config sharing mode${NC}"
+# --- Step 5: Default sharing mode ---
+echo -e "${BOLD}[5/7] Default config sharing mode${NC}"
 echo "  How should sessions handle settings, MCPs, and plugins?"
 echo ""
 echo "  1) Shared — Symlink from ~/.claude (recommended)"
@@ -114,8 +134,8 @@ case "${sharing_choice}" in
 esac
 echo ""
 
-# --- Step 5: Create config and directories ---
-echo -e "${BOLD}[5/6] Setting up...${NC}"
+# --- Step 6: Create config and directories ---
+echo -e "${BOLD}[6/7] Setting up...${NC}"
 
 # Create config directory
 mkdir -p "${CMS_CONFIG_DIR}"
@@ -127,6 +147,7 @@ cat > "${CMS_CONFIG_FILE}" << EOF
 PERMISSIONS_MODE="${PERMISSIONS_MODE}"
 SESSION_COUNT="${session_count}"
 SHARING_MODE="${SHARING_MODE}"
+CMD_NAME="${CMD_NAME}"
 EOF
 echo "  Config: ${CMS_CONFIG_FILE}"
 
@@ -159,8 +180,8 @@ else
 fi
 echo ""
 
-# --- Step 6: Shell aliases ---
-echo -e "${BOLD}[6/6] Shell aliases${NC}"
+# --- Step 7: Shell aliases ---
+echo -e "${BOLD}[7/7] Shell aliases${NC}"
 
 # Detect shell
 SHELL_NAME="$(basename "${SHELL:-/bin/bash}")"
@@ -170,42 +191,61 @@ case "${SHELL_NAME}" in
     *)    RC_FILE="${HOME}/.${SHELL_NAME}rc" ;;
 esac
 
-# Build alias block with both naming conventions:
-#   clauded-N  → default permissions (safe)
-#   claude-N   → full permissions (--dangerously-skip-permissions)
+# Build alias block
+# Both patterns work: "name 1" (function) and "name-1" (alias)
+# "name!" variants = full permissions
 ALIAS_BLOCK="
 # --- claude-multisession aliases ---
-# Default permissions (safe mode)
-alias clauded='cms 0'
-alias clauded-0='cms 0'"
+
+# Function: ${CMD_NAME} [N] — launch session N (0=default)
+${CMD_NAME}() {
+  cms \"\${1:-0}\" \"\${@:2}\"
+}
+
+# Dash aliases (default permissions)
+alias ${CMD_NAME}-0='cms 0'"
 
 for i in $(seq 1 "${session_count}"); do
     ALIAS_BLOCK="${ALIAS_BLOCK}
-alias clauded-${i}='cms ${i}'"
+alias ${CMD_NAME}-${i}='cms ${i}'"
 done
 
 ALIAS_BLOCK="${ALIAS_BLOCK}
 
-# Full permissions (--dangerously-skip-permissions)
-alias claude-0='cms 0 --dangerously-skip-permissions'"
+# Bang aliases: full permissions (--dangerously-skip-permissions)
+# Usage: ${CMD_NAME}-1! or ${CMD_NAME}! 1
+${CMD_NAME}!() {
+  cms \"\${1:-0}\" --dangerously-skip-permissions \"\${@:2}\"
+}
+alias ${CMD_NAME}-0!='cms 0 --dangerously-skip-permissions'"
 
 for i in $(seq 1 "${session_count}"); do
     ALIAS_BLOCK="${ALIAS_BLOCK}
-alias claude-${i}='cms ${i} --dangerously-skip-permissions'"
+alias ${CMD_NAME}-${i}!='cms ${i} --dangerously-skip-permissions'"
 done
 
 ALIAS_BLOCK="${ALIAS_BLOCK}
 # --- end claude-multisession ---"
 
-echo "  The following aliases will be added to ${RC_FILE}:"
+echo -e "  Commands that will be available:"
 echo ""
-echo -e "${DIM}  clauded, clauded-1..${session_count}  -> default permissions${NC}"
-echo -e "${DIM}  claude-0, claude-1..${session_count}   -> full permissions (skip prompts)${NC}"
+echo -e "  ${BOLD}With space (function):${NC}"
+echo -e "    ${GREEN}${CMD_NAME}${NC}        → default session"
+echo -e "    ${GREEN}${CMD_NAME} 1${NC}      → session 1"
+echo -e "    ${GREEN}${CMD_NAME} 2${NC}      → session 2"
 echo ""
-echo -e "${DIM}${ALIAS_BLOCK}${NC}"
+echo -e "  ${BOLD}With dash (alias):${NC}"
+echo -e "    ${GREEN}${CMD_NAME}-1${NC}      → session 1"
+echo -e "    ${GREEN}${CMD_NAME}-2${NC}      → session 2"
+echo ""
+echo -e "  ${BOLD}Full permissions (! suffix):${NC}"
+echo -e "    ${GREEN}${CMD_NAME}! 1${NC}     → session 1 (skip prompts)"
+echo -e "    ${GREEN}${CMD_NAME}-1!${NC}     → session 1 (skip prompts)"
+echo ""
+echo -e "  ${DIM}Both \"${CMD_NAME} 1\" and \"${CMD_NAME}-1\" launch the same session.${NC}"
 echo ""
 
-read -r -p "  Add aliases to ${RC_FILE}? (Y/n): " add_aliases
+read -r -p "  Add to ${RC_FILE}? (Y/n): " add_aliases
 add_aliases="${add_aliases:-Y}"
 
 if [[ "${add_aliases}" =~ ^[Yy]$ ]]; then
@@ -228,15 +268,16 @@ echo -e "${GREEN}${BOLD}Installation complete!${NC}"
 echo ""
 echo "Quick start:"
 echo "  1. Reload your shell:  source ${RC_FILE}"
-echo "  2. Launch default:     cms  (or clauded)"
-echo "  3. Launch session 1:   cms 1  (or clauded-1)"
+echo "  2. Launch default:     ${CMD_NAME}  (or ${CMD_NAME}-0)"
+echo "  3. Launch session 1:   ${CMD_NAME} 1  (or ${CMD_NAME}-1)"
 echo "  4. Log in each session with a different account"
 echo "  5. Check accounts:     cms-who"
 echo ""
 echo "Commands:"
-echo "  cms [N]          Launch session N (0=default)"
-echo "  clauded-N        Launch session N (default permissions)"
-echo "  claude-N         Launch session N (full permissions)"
+echo "  ${CMD_NAME} [N]       Launch session N (0=default)"
+echo "  ${CMD_NAME}-N         Same thing, dash style"
+echo "  ${CMD_NAME}! N        Full permissions mode"
+echo "  ${CMD_NAME}-N!        Full permissions mode, dash style"
 echo "  cms-who          Show accounts per session"
 echo "  cms-info [N]     Show detailed session info"
 echo "  cms-list         List all sessions"
